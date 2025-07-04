@@ -1,0 +1,301 @@
+# Modern Sienna Power System Simulation Configuration
+# Updated for latest PowerSimulations.jl v0.30+ API and PowerAnalytics.jl v1.0 integration
+# Optimized for PowerGraphics.jl visualization workflows
+
+[project]
+name = "South African Power System 2030"
+description = "South African power system dispatch model for 2030 scenario using modern Sienna ecosystem"
+version = "2.0.0"  # Updated for modern API
+author = "Power Systems Team"
+created_date = "2025-01-27"
+
+[paths]
+# Primary data directory containing CSV files (bus.csv, gen.csv, load.csv, etc.)
+data_directory = "~/showcase/pypsa-rsa/networks/sienna/TEST/dispatch_2030/"
+
+# Output directories for results and exports
+output_directory = "~/showcase/Sienna/sienna_simulation_results"
+export_directory = "~/showcase/Sienna/sienna_exported_systems"
+
+# Optional: Separate generator files (if you have split thermal/renewable files)
+# Leave empty to use unified gen.csv file
+thermal_gen_file = ""      # e.g., "thermal_generators.csv"
+renewable_gen_file = ""    # e.g., "renewable_generators.csv"
+
+# Optional: Time series data directory
+timeseries_directory = ""  # e.g., "timeseries_data/"
+
+[system_building]
+# PowerSystems.jl system parameters
+base_power = 100.0         # MW - system base power
+default_voltage = 400.0    # kV - default bus voltage when not specified
+validate_system = true     # Validate system after building
+load_timeseries = true    # Set to true when you have time series data
+
+# Generator fuel type classification
+[system_building.fuel_mapping]
+thermal_fuels = [
+    "COAL", 
+    "NATURAL_GAS", 
+    "DIESEL", 
+    "NUCLEAR", 
+    "BIOMASS", 
+    "OIL",
+    "GAS"  # Alternative naming
+]
+renewable_fuels = [
+    "WIND", 
+    "SOLAR", 
+    "HYDRO", 
+    "GEOTHERMAL",
+    "SOLAR_PV",      # Alternative naming
+    "SOLAR_CSP",     # Concentrated Solar Power
+    "WIND_ONSHORE",  # Alternative naming
+    "WIND_OFFSHORE"  # Alternative naming
+]
+
+# Default cost parameters (used when CSV data is missing or incomplete)
+[system_building.defaults]
+thermal_variable_cost = 50.0    # R/MWh (ZAR per MWh)
+thermal_startup_cost = 1000.0   # R per startup
+thermal_shutdown_cost = 0.0     # R per shutdown
+renewable_variable_cost = 0.0   # R/MWh (typically zero for renewables)
+thermal_ramp_rate = 100.0       # MW/hour default ramp rate
+
+# Default generator limits when not specified
+thermal_min_power_fraction = 0.3  # Minimum power as fraction of max_power
+renewable_min_power_fraction = 0.0 # Minimum power as fraction of max_power
+
+# PowerSystemCaseBuilder.jl integration
+[powersystemcasebuilder]
+create_psb_case = true      # Create PowerSystemCaseBuilder compatible case
+include_metadata = true     # Include comprehensive metadata
+include_readme = true       # Generate README.md file
+case_name_suffix = "_sienna" # Suffix for case names
+
+[simulations]
+# Default simulation parameters
+default_horizon_hours = 24      # Simulation horizon in hours
+default_solver = "HiGHS"        # Default optimization solver
+save_results = true             # Save detailed results
+include_unit_commitment = true  # Run both ED and UC by default
+
+# Modern API: Use default templates (recommended for latest PowerSimulations.jl)
+use_default_templates = true    # Use PSI.template_economic_dispatch() and PSI.template_unit_commitment()
+use_custom_templates = false    # Fallback to custom templates if defaults fail
+
+# Economic dispatch vs Unit commitment preferences
+run_economic_dispatch = true    # Run Economic Dispatch
+run_unit_commitment = true      # Run Unit Commitment
+run_comparison = true           # Compare ED vs UC results
+
+# Multi-stage simulation settings (for advanced workflows)
+enable_multistage_simulation = false  # Enable DA/RT simulation sequence
+da_horizon_hours = 24                  # Day-ahead horizon
+rt_horizon_hours = 1                   # Real-time horizon
+
+# Solver-specific settings
+[simulations.solver_settings]
+
+[simulations.solver_settings.HiGHS]
+# HiGHS solver parameters for different problem types (updated for v0.30+)
+time_limit_ed = 300.0      # seconds for Economic Dispatch
+time_limit_uc = 600.0      # seconds for Unit Commitment
+mip_gap_ed = 0.01          # MIP gap for Economic Dispatch
+mip_gap_uc = 0.02          # MIP gap for Unit Commitment (more relaxed)
+threads = 0                # 0 = auto-detect number of threads
+presolve = "on"            # Enable presolve
+parallel = "on"            # Enable parallel processing
+output_flag = false        # Suppress solver output (set true for debugging)
+
+# Network model configuration (updated for latest API)
+[simulations.network]
+default_model = "CopperPlatePowerModel"  # No transmission constraints (simplest)
+# Alternative options:
+#   "StandardPTDFModel"    - DC power flow with transmission limits
+#   "DCPPowerModel"        - DC power flow
+#   "ACPPowerModel"        - AC power flow (most detailed, slowest)
+
+enable_transmission_limits = false  # Set to true to include line limits
+transmission_contingency = false    # N-1 contingency analysis
+use_slacks = true                   # Add slack variables for debugging
+
+# Modern device formulation preferences (updated for v0.30+ API)
+[simulations.formulations]
+
+[simulations.formulations.economic_dispatch]
+# Economic Dispatch formulations (faster, LP-based) - Modern Names
+thermal_standard = "ThermalBasicDispatch"           # Updated name
+renewable_dispatch = "RenewableFullDispatch"
+renewable_nondispatch = "FixedOutput"
+hydro_dispatch = "HydroDispatchRunOfRiver"
+hydro_energy_reservoir = "HydroDispatchReservoirBudget"
+generic_battery = "BookKeeping"                     # Modern storage formulation
+power_load = "StaticPowerLoad"
+interruptible_load = "DispatchablePowerLoad"       # Modern load formulation
+line = "StaticBranch"
+transformer = "StaticBranch"
+tap_transformer = "StaticBranch"                    # Added for completeness
+dc_line = "HVDCTwoTerminalDispatch"                 # Updated name
+
+[simulations.formulations.unit_commitment]
+# Unit Commitment formulations (more detailed, MILP-based) - Modern Names
+thermal_standard = "ThermalBasicUnitCommitment"     # Updated name
+renewable_dispatch = "RenewableFullDispatch"
+renewable_nondispatch = "FixedOutput"
+hydro_dispatch = "HydroDispatchRunOfRiver"
+hydro_energy_reservoir = "HydroDispatchReservoirBudget"
+generic_battery = "BookKeeping"                     # Modern storage formulation
+power_load = "StaticPowerLoad"
+interruptible_load = "DispatchablePowerLoad"       # Modern load formulation
+line = "StaticBranch"
+transformer = "StaticBranch"
+tap_transformer = "StaticBranch"
+dc_line = "HVDCTwoTerminalDispatch"
+
+# Results and output configuration (optimized for PowerAnalytics.jl v1.0)
+[output]
+# File formats to save
+save_json_summary = true      # Save JSON summary of results
+save_csv_variables = true     # Save variables as CSV files
+save_csv_parameters = false   # Save parameters as CSV files (usually not needed)
+save_csv_duals = false        # Save dual variables (for advanced analysis)
+save_csv_expressions = false  # Save expressions (for advanced analysis)
+
+# Modern approach: Save ALL variables for PowerAnalytics.jl integration
+save_all_variables = true     # Recommended: save all variables for PowerAnalytics.jl
+save_specific_variables = false # Alternative: save only specific variables
+
+# If save_specific_variables = true, these variables will be saved:
+# (But recommend save_all_variables = true for PowerAnalytics.jl integration)
+specific_variables = [
+    "ActivePowerVariable__ThermalStandard",      # Thermal generation dispatch
+    "ActivePowerVariable__RenewableDispatch",    # Renewable generation dispatch
+    "OnVariable__ThermalStandard",               # Unit commitment decisions
+    "StartVariable__ThermalStandard",            # Unit startup decisions
+    "StopVariable__ThermalStandard",             # Unit shutdown decisions
+    "ActivePowerVariable__HydroDispatch",        # Hydro generation
+    "ActivePowerOutVariable__GenericBattery",    # Storage discharge
+    "ActivePowerInVariable__GenericBattery",     # Storage charge
+    "EnergyVariable__GenericBattery"             # Storage energy level
+]
+
+# PowerAnalytics.jl and PowerGraphics.jl integration
+enable_poweranalytics = true   # Enable PowerAnalytics.jl integration
+enable_powergraphics = false   # Enable PowerGraphics.jl plots (requires additional setup)
+auto_generate_plots = false    # Automatically generate standard plots
+
+# Results organization
+create_timestamped_folders = true  # Create timestamped result folders
+keep_optimization_files = false    # Keep .mps/.lp files (large!)
+compress_results = false           # Compress result files (saves space)
+
+# Logging configuration (updated for modern debugging)
+[logging]
+level = "Info"              # "Debug", "Info", "Warn", "Error"
+log_to_file = false         # Save logs to file
+log_file = "sienna_simulation.log"
+show_solver_output = false  # Show detailed solver output
+log_build_time = true       # Log model build times
+log_solve_time = true       # Log solve times
+log_variable_names = false  # Log all variable names (debug mode)
+
+# Regional/Country specific settings
+[regional]
+country = "South Africa"
+timezone = "SAST"           # South Africa Standard Time
+currency = "ZAR"            # South African Rand
+load_shedding_cost = 100000.0  # R/MWh - cost of load shedding
+
+# South African provincial/regional mappings
+provinces = [
+    "Eastern Cape",
+    "Free State", 
+    "Gauteng",
+    "Hydra Central",        # Virtual region in some models
+    "KwaZulu Natal",
+    "Limpopo",
+    "Mpumalanga",
+    "North West",
+    "Northern Cape",
+    "Western Cape"
+]
+
+# System validation rules
+[validation]
+check_power_balance = true         # Verify generation can meet load
+check_voltage_limits = true        # Check bus voltage limits
+check_thermal_limits = true        # Check generator thermal limits
+check_ramp_limits = true          # Check generator ramp limits
+check_time_series_consistency = true  # Check time series data consistency
+
+# Sanity check limits (will warn if exceeded)
+max_generation_capacity = 100000.0  # MW - total system generation
+max_load = 50000.0                  # MW - total system load
+max_single_generator = 5000.0       # MW - largest single generator
+min_reserve_margin = 0.15           # 15% minimum reserve margin
+
+# Advanced simulation options (updated for v0.30+)
+[advanced]
+# Time series handling
+time_series_in_memory = false      # Load all time series in memory (faster but uses more RAM)
+time_series_directory_override = "" # Override time series directory
+
+# Parallel processing
+enable_parallel_scenarios = false  # Run multiple scenarios in parallel
+max_parallel_workers = 4           # Maximum parallel workers
+
+# Model modifications for modern API
+add_slack_variables = true         # Add slack variables for debugging
+slack_penalty = 1000000.0         # High penalty for slack variable usage
+balance_slack_variables = true     # Add balance slack variables
+
+# Modern PowerSimulations.jl features
+enable_warm_start = true           # Use warm start for faster solving
+store_variable_names = false       # Store variable names (increases memory)
+calculate_conflict = false         # Calculate conflicts for infeasible problems
+rebuild_model = false              # Force model rebuild each solve
+
+# Development and debugging options
+[development]
+debug_mode = false                 # Enable debug logging and checks
+save_intermediate_files = false    # Save intermediate system files
+verbose_logging = false            # Extra detailed logging
+profile_performance = false        # Profile simulation performance
+
+# Testing options
+test_with_small_horizon = false    # Use small horizon for testing
+small_horizon_hours = 3            # Hours to use for testing
+test_build_only = false           # Only build model, don't solve
+
+# Model export options (modern API)
+export_optimization_model = false  # Export .mps/.lp files
+export_jump_model = false         # Export JuMP model structure
+serialize_model = true            # Serialize model for later use
+
+# PowerAnalytics.jl specific settings
+[poweranalytics]
+# ComponentSelector settings for advanced analysis
+enable_component_selection = true  # Enable advanced component selection
+group_by_fuel_type = true         # Group generators by fuel type
+group_by_technology = true        # Group by technology type
+group_by_region = false           # Group by geographical region (if data available)
+
+# Metric calculation settings
+calculate_standard_metrics = true  # Calculate standard power system metrics
+calculate_emissions = false       # Calculate emissions (requires emission factors)
+calculate_reliability = false     # Calculate reliability metrics
+calculate_economics = true        # Calculate economic metrics
+
+# Custom analysis settings
+custom_metrics = []               # List of custom metrics to calculate
+export_to_poweranalytics = true  # Export results for PowerAnalytics.jl processing
+
+# Experimental features (use with caution - v0.30+ features)
+[experimental]
+use_advanced_formulations = false  # Try experimental device formulations
+enable_contingency_analysis = false # N-1 contingency analysis
+stochastic_scenarios = false       # Multiple scenario analysis
+machine_learning_integration = false # ML-based forecasting integration
+carbon_constraints = false         # Carbon emission constraints
+flexibility_services = false       # Advanced flexibility services
