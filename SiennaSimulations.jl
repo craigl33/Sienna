@@ -350,6 +350,7 @@ function build_problem!(sienna_sim::SiennaSimulations, formulation_type::String)
             template,
             sys;
             optimizer = optimizer,
+            store_variable_names=true,
             horizon = Hour(config.default_horizon_hours),
             name = "$(formulation_type)_problem"
         )

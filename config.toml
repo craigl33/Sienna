@@ -11,7 +11,7 @@ created_date = "2025-01-27"
 
 [paths]
 # Primary data directory containing CSV files (bus.csv, gen.csv, load.csv, etc.)
-data_directory = "~/showcase/pypsa-rsa/networks/sienna/TEST/dispatch_2030/"
+data_directory = "~/showcase/Sienna/networks/TEST/dispatch_2030/"
 
 # Output directories for results and exports
 output_directory = "~/showcase/Sienna/sienna_simulation_results"
@@ -31,6 +31,16 @@ base_power = 100.0         # MW - system base power
 default_voltage = 400.0    # kV - default bus voltage when not specified
 validate_system = true     # Validate system after building
 load_timeseries = true    # Set to true when you have time series data
+
+[system_building.areas]
+
+# Area creation strategy:
+area_strategy = "single"  # Recommended for CopperPlatePowerModel
+# Default area name when using "single" strategy
+default_area_name = "south_africa_system"
+# Validation settings
+validate_area_assignments = true
+allow_unassigned_buses = false
 
 # Generator fuel type classification
 [system_building.fuel_mapping]
@@ -75,10 +85,10 @@ case_name_suffix = "_sienna" # Suffix for case names
 
 [simulations]
 # Default simulation parameters
-default_horizon_hours = 24      # Simulation horizon in hours
+default_horizon_hours = 8760      # Simulation horizon in hours
 default_solver = "HiGHS"        # Default optimization solver
 save_results = true             # Save detailed results
-include_unit_commitment = true  # Run both ED and UC by default
+include_unit_commitment = false  # Run both ED and UC by default
 
 # Modern API: Use default templates (recommended for latest PowerSimulations.jl)
 use_default_templates = true    # Use PSI.template_economic_dispatch() and PSI.template_unit_commitment()
@@ -86,8 +96,8 @@ use_custom_templates = false    # Fallback to custom templates if defaults fail
 
 # Economic dispatch vs Unit commitment preferences
 run_economic_dispatch = true    # Run Economic Dispatch
-run_unit_commitment = true      # Run Unit Commitment
-run_comparison = true           # Compare ED vs UC results
+run_unit_commitment = false      # Run Unit Commitment
+run_comparison = false           # Compare ED vs UC results
 
 # Multi-stage simulation settings (for advanced workflows)
 enable_multistage_simulation = false  # Enable DA/RT simulation sequence
@@ -106,17 +116,17 @@ mip_gap_uc = 0.02          # MIP gap for Unit Commitment (more relaxed)
 threads = 0                # 0 = auto-detect number of threads
 presolve = "on"            # Enable presolve
 parallel = "on"            # Enable parallel processing
-output_flag = false        # Suppress solver output (set true for debugging)
+output_flag = true        # Suppress solver output (set true for debugging)
 
 # Network model configuration (updated for latest API)
 [simulations.network]
 default_model = "CopperPlatePowerModel"  # No transmission constraints (simplest)
 # Alternative options:
-#   "StandardPTDFModel"    - DC power flow with transmission limits
-#   "DCPPowerModel"        - DC power flow
-#   "ACPPowerModel"        - AC power flow (most detailed, slowest)
+#   "CopperPlatePowerModel"  
+#   "AreaBalancePowerModel"      
+#   "AreaPTDFPowerModel"        -
 
-enable_transmission_limits = false  # Set to true to include line limits
+enable_transmission_limits = true  # Set to true to include line limits
 transmission_contingency = false    # N-1 contingency analysis
 use_slacks = true                   # Add slack variables for debugging
 
@@ -128,11 +138,11 @@ use_slacks = true                   # Add slack variables for debugging
 thermal_standard = "ThermalBasicDispatch"           # Updated name
 renewable_dispatch = "RenewableFullDispatch"
 renewable_nondispatch = "FixedOutput"
-hydro_dispatch = "HydroDispatchRunOfRiver"
-hydro_energy_reservoir = "HydroDispatchReservoirBudget"
-generic_battery = "BookKeeping"                     # Modern storage formulation
+hydro_dispatch = "RenewableFullDispatch"
+hydro_energy_reservoir = "RenewableFullDispatch"
+generic_battery = "EnergyReservoirStorage"                     # Modern storage formulation
 power_load = "StaticPowerLoad"
-interruptible_load = "DispatchablePowerLoad"       # Modern load formulation
+interruptible_load = "PowerLoadInterruption"       # Modern load formulation
 line = "StaticBranch"
 transformer = "StaticBranch"
 tap_transformer = "StaticBranch"                    # Added for completeness
@@ -143,11 +153,11 @@ dc_line = "HVDCTwoTerminalDispatch"                 # Updated name
 thermal_standard = "ThermalBasicUnitCommitment"     # Updated name
 renewable_dispatch = "RenewableFullDispatch"
 renewable_nondispatch = "FixedOutput"
-hydro_dispatch = "HydroDispatchRunOfRiver"
-hydro_energy_reservoir = "HydroDispatchReservoirBudget"
-generic_battery = "BookKeeping"                     # Modern storage formulation
+hydro_dispatch = "RenewableFullDispatch"
+hydro_energy_reservoir = "RenewableFullDispatch"
+generic_battery = "EnergyReservoirStorage"                     # Modern storage formulation
 power_load = "StaticPowerLoad"
-interruptible_load = "DispatchablePowerLoad"       # Modern load formulation
+interruptible_load = "PowerLoadInterruption"       # Modern load formulation
 line = "StaticBranch"
 transformer = "StaticBranch"
 tap_transformer = "StaticBranch"
@@ -251,8 +261,8 @@ slack_penalty = 1000000.0         # High penalty for slack variable usage
 balance_slack_variables = true     # Add balance slack variables
 
 # Modern PowerSimulations.jl features
-enable_warm_start = true           # Use warm start for faster solving
-store_variable_names = false       # Store variable names (increases memory)
+enable_warm_start = false           # Use warm start for faster solving
+store_variable_names = true       # Store variable names (increases memory)
 calculate_conflict = false         # Calculate conflicts for infeasible problems
 rebuild_model = false              # Force model rebuild each solve
 
@@ -269,7 +279,7 @@ small_horizon_hours = 3            # Hours to use for testing
 test_build_only = false           # Only build model, don't solve
 
 # Model export options (modern API)
-export_optimization_model = false  # Export .mps/.lp files
+export_optimization_model = true  # Export .mps/.lp files
 export_jump_model = false         # Export JuMP model structure
 serialize_model = true            # Serialize model for later use
 
@@ -294,8 +304,25 @@ export_to_poweranalytics = true  # Export results for PowerAnalytics.jl processi
 # Experimental features (use with caution - v0.30+ features)
 [experimental]
 use_advanced_formulations = false  # Try experimental device formulations
-enable_contingency_analysis = false # N-1 contingency analysis
+enable_contingency_analysis = false # N-1 contingency analysissys
 stochastic_scenarios = false       # Multiple scenario analysis
 machine_learning_integration = false # ML-based forecasting integration
 carbon_constraints = false         # Carbon emission constraints
 flexibility_services = false       # Advanced flexibility services
+
+[debug]
+# Model export options for debugging infeasibility
+export_optimization_model = true   # Export .mps files (universal format)
+export_lp_model = true             # Export .lp files (human-readable)  
+export_jump_model = false          # Export JuMP model structure
+serialize_model = true             # Serialize model for later analysis
+
+# Solver debugging options  
+save_solver_logs = true            # Save detailed solver output
+enable_solver_debugging = true     # Enable enhanced debugging
+debug_mode = false                 # Enable debug logging and checks (NEW - add this!)
+
+# Additional debugging options
+save_constraint_breakdown = true   # Export constraint analysis
+save_variable_breakdown = true     # Export variable analysis
+enable_infeasibility_analysis = true # Run infeasibility diagnosis

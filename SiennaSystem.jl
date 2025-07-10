@@ -40,6 +40,7 @@ using Dates
 using Logging
 using InfrastructureSystems  # Add this import for InfrastructureSystemsInternal
 using PowerSystems: PumpHydroStatus  # Import the enum
+using Infiltrator
 
 # Import our configuration manager
 include("SiennaConfig.jl")
@@ -118,20 +119,33 @@ function build_system!(sienna_sys::SiennaSystem)
     sienna_sys.component_counts = Dict{String, Int}()
     
     try
-        # Create base system
+            # Create base system
         create_base_system!(sienna_sys)
+        println("After create_base_system: ", get_units_base(sienna_sys.system))
         
         # Add components in dependency order
         add_buses!(sienna_sys)
+        println("After add_buses: ", get_units_base(sienna_sys.system))
+        
         add_areas!(sienna_sys)
+        println("After add_areas: ", get_units_base(sienna_sys.system))
+        
         add_generators!(sienna_sys)
-        add_storage!(sienna_sys)  # Add storage support
+        println("After add_generators: ", get_units_base(sienna_sys.system))
+        
+        add_storage!(sienna_sys)
+        println("After add_storage: ", get_units_base(sienna_sys.system))
+        
         add_loads!(sienna_sys)
+        println("After add_loads: ", get_units_base(sienna_sys.system))
+        
         add_network_components!(sienna_sys)
+        println("After add_network: ", get_units_base(sienna_sys.system))
         
         # Load time series if requested
         if sienna_sys.config.load_timeseries
             load_time_series!(sienna_sys)
+            println("After load_time_series: ", get_units_base(sienna_sys.system))
         end
         
         # Validate system if requested
@@ -165,12 +179,12 @@ function create_base_system!(sienna_sys::SiennaSystem)
     @info "Creating base PowerSystems.jl system..."
     
     # Create system with base power from config
-    sienna_sys.system = System(sienna_sys.config.base_power)
+    sienna_sys.system = System(sienna_sys.config.base_power, unit_system="NATURAL_UNITS")
     
     # Set system name from config
     set_name!(sienna_sys.system, sienna_sys.config.project_name)
     
-    @info "✓ Base system created with $(sienna_sys.config.base_power) MW base power"
+    @info "✓ Base system created with $(sienna_sys.config.base_power) MW base power and NATURAL_UNITS"
 end
 
 """
@@ -554,6 +568,7 @@ function add_thermal_generator!(sienna_sys::SiennaSystem, row, bus::ACBus)
     min_reactive = Float64(get(row, :min_reactive_power, -30.0))
     max_reactive = Float64(get(row, :max_reactive_power, 30.0))
     
+    @infiltrate
     # Create thermal generator
     gen = ThermalStandard(
         string(row.name),
@@ -568,10 +583,11 @@ function add_thermal_generator!(sienna_sys::SiennaSystem, row, bus::ACBus)
         (up = get(row, :ramp_30, defaults["ramp_rate"]), 
          down = get(row, :ramp_30, defaults["ramp_rate"])),
         operation_cost,
-        100.0
+        1.0 # base_power
     )
     
     add_component!(sienna_sys.system, gen)
+    @infiltrate
 end
 
 """
@@ -600,7 +616,7 @@ function add_renewable_dispatch_generator!(sienna_sys::SiennaSystem, row, bus::A
         (min = get(row, :min_reactive_power, 0.0), max = get(row, :max_reactive_power, 0.0)),
         1.0,  # power_factor
         operation_cost,
-        100.0  # base_power
+        1.0  # base_power
     )
     
     add_component!(sienna_sys.system, gen)
@@ -641,7 +657,7 @@ function add_hydro_dispatch_generator!(sienna_sys::SiennaSystem, row, bus::ACBus
         reactive_power_limits,                 # reactive_power_limits::Union{Nothing, MinMax}
         nothing,                               # ramp_limits::Union{Nothing, UpDown}
         nothing,                               # time_limits::Union{Nothing, UpDown}
-        100.0,                                 # base_power::Float64
+        1.0,                                 # base_power::Float64
         operation_cost,                        # operation_cost::Union{HydroGenerationCost, MarketBidCost}
         Service[],                             # services::Vector{Service}
         nothing,                               # dynamic_injector::Union{Nothing, DynamicInjection}
@@ -680,7 +696,7 @@ function add_renewable_nondispatch_generator!(sienna_sys::SiennaSystem, row, bus
         (min = get(row, :min_reactive_power, 0.0), max = get(row, :max_reactive_power, 0.0)),
         1.0,  # power_factor
         operation_cost,
-        100.0  # base_power
+        1.0  # base_power
     )
     
     add_component!(sienna_sys.system, gen)
@@ -838,6 +854,7 @@ function process_time_series_entry_improved!(sienna_sys::SiennaSystem, entry)
     # Create SingleTimeSeries with proper scaling support
     scaling_factor = get_scaling_factor_multiplier(entry, component)
     
+   
     single_ts = SingleTimeSeries(
         name = label,
         data = ts_array,
@@ -858,12 +875,15 @@ end
 """
     get_scaling_factor_multiplier(entry, component)
 
-Get the appropriate scaling factor multiplier for time series.
+Get the appropriate scaling factor multiplier for time series. Nothing means no scaling, and is the appropriate default for PowerSystems.jl.
 """
 function get_scaling_factor_multiplier(entry, component)
-    scaling_spec = get(entry, "scaling_factor_multiplier", "1.0")
+    scaling_spec = get(entry, "scaling_factor_multiplier", nothing)
     
-    if scaling_spec == "get_max_active_power"
+    if scaling_spec === nothing
+        # Default: no scaling
+        return nothing
+    elseif scaling_spec == "get_max_active_power"
         # Use PowerSystems.jl function as scaling factor
         return get_max_active_power
     elseif scaling_spec == "get_rating"
@@ -873,15 +893,15 @@ function get_scaling_factor_multiplier(entry, component)
         # Alternative for thermal generators
         return x -> get_active_power_limits(x).max
     elseif scaling_spec == "1.0" || scaling_spec == 1.0
-        # No scaling
-        return 1.0
+        # No scaling - return numeric value, not Nothing
+        return nothing
     else
         # Try to parse as numeric value
         try
             return parse(Float64, string(scaling_spec))
         catch
             @warn "Unknown scaling factor: $scaling_spec, using 1.0"
-            return 1.0
+            return nothing  # Return 1.0 instead of Nothing
         end
     end
 end
@@ -938,6 +958,11 @@ function transform_to_forecasts!(sienna_sys::SiennaSystem)
             Hour(horizon_hours),  # horizon
             Hour(24),             # interval (daily forecasts)
         )
+
+        # ✅ FIX: Reset units back to NATURAL_UNITS after transformation
+        set_units_base_system!(sienna_sys.system, "NATURAL_UNITS")
+        @info "✓ Units reset to NATURAL_UNITS after forecast transformation"
+        
         
         sienna_sys.forecast_available = true
         @info "✓ Successfully transformed time series to forecasts"
@@ -1080,7 +1105,7 @@ function add_pumped_hydro_storage!(sienna_sys::SiennaSystem, row, bus::ACBus)
         0.0,                                       # active_power::Float64
         0.0,                                       # reactive_power::Float64
         rating,                                    # rating::Float64
-        100.0,                                     # base_power::Float64
+        1.0,                                     # base_power::Float64
         PrimeMovers.PS,                           # prime_mover_type::PrimeMovers
         (min = 0.0, max = generate_power_limit),  # active_power_limits::MinMax
         (min = -30.0, max = 30.0),               # reactive_power_limits::Union{Nothing, MinMax}
@@ -1197,7 +1222,7 @@ function add_energy_storage!(sienna_sys::SiennaSystem, row, bus::ACBus, storage_
         efficiency = (in = efficiency_in, out = efficiency_out),
         reactive_power = 0.0,
         reactive_power_limits = nothing,  # No reactive power for batteries
-        base_power = 100.0,
+        base_power = 1.0,
         operation_cost = operation_cost,
         conversion_factor = 1.0,  # MWh to MWh
         storage_target = 0.0,     # No end-of-simulation target
@@ -1283,7 +1308,7 @@ function add_loads!(sienna_sys::SiennaSystem)
                 bus = bus,
                 active_power = get(row, :max_active_power, 100.0),
                 reactive_power = get(row, :max_reactive_power, 30.0),
-                base_power = 100.0,
+                base_power = 1.0,
                 max_active_power = get(row, :max_active_power, 100.0),
                 max_reactive_power = get(row, :max_reactive_power, 30.0)
             )
@@ -1450,10 +1475,10 @@ Validate the built system with improved generator type validation.
 """
 function validate_system!(sienna_sys::SiennaSystem)
     @info "Validating PowerSystems.jl system..."
-    
-    sienna_sys.validation_warnings = String[]
-    sienna_sys.validation_errors = String[]
-    
+
+    println("System units: ", get_units_base(sienna_sys.system))
+    #Test if the loads have been loaded correctly in terms of values
+
     # Basic component validation
     buses = get_components(ACBus, sienna_sys.system)
     thermal_gens = get_components(ThermalStandard, sienna_sys.system)
@@ -1465,7 +1490,12 @@ function validate_system!(sienna_sys::SiennaSystem)
     dc_lines = get_components(TwoTerminalHVDCLine, sienna_sys.system)
     battery_storage = get_components(EnergyReservoirStorage, sienna_sys.system)
     pumped_hydro = get_components(HydroPumpedStorage, sienna_sys.system)
+
+    for load in loads
+        println("Load: ", get_name(load), " - Active Power: ", get_max_active_power(load), " MW, Reactive Power: ", get_max_reactive_power(load), " MVar")
+    end
     
+
     # Check for minimum required components
     if isempty(buses)
         push!(sienna_sys.validation_errors, "System has no buses")
