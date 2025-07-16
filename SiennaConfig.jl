@@ -1,23 +1,10 @@
 #!/usr/bin/env julia
 
 """
-SiennaConfig.jl - Configuration Management for Sienna Ecosystem
-===============================================================
+SiennaConfig.jl - Updated Configuration Management for Simplified Config Structure
+=================================================================================
 
-Class-based configuration manager that encapsulates all config-related functionality.
-Provides clean interface for accessing configuration parameters throughout the workflow.
-
-Features:
-- Centralized config loading and validation
-- Type-safe parameter access
-- Path resolution and validation
-- Default value management
-- Config compatibility checking
-
-Usage:
-    config = SiennaConfig("config.toml")
-    data_dir = config.get_data_directory()
-    solver_settings = config.get_solver_settings("economic_dispatch")
+Updated to handle the cleaned config.toml structure while maintaining all functionality.
 """
 
 using TOML
@@ -27,7 +14,7 @@ using Logging
 """
     SiennaConfig
 
-Main configuration class that encapsulates all configuration functionality.
+Main configuration class - updated for simplified config structure.
 """
 mutable struct SiennaConfig
     # Core configuration data
@@ -79,12 +66,11 @@ end
 """
     SiennaConfig(config_file::String="config.toml")
 
-Constructor - Load and parse configuration from TOML file.
+Constructor - Load and parse simplified configuration.
 """
 function SiennaConfig(config_file::String="config.toml")
     @info "🔧 Initializing SiennaConfig from: $config_file"
     
-    # Check if config file exists
     if !isfile(config_file)
         @error "Configuration file not found: $config_file"
         @info "Creating default configuration file..."
@@ -92,28 +78,25 @@ function SiennaConfig(config_file::String="config.toml")
         error("❌ Configuration file created. Please edit $config_file and run again.")
     end
     
-    # Load TOML configuration
     config_data = try
         TOML.parsefile(config_file)
     catch e
         error("❌ Failed to parse configuration file: $e")
     end
     
-    # Create instance with default values
     config = SiennaConfig(
         config_data,
         abspath(config_file),
-        "", "", "",  # paths - will be set in parse_and_validate
+        "", "", "",  # paths
         100.0, 400.0, true, false,  # system defaults
         "", "", "", "",  # project metadata
-        24, "HiGHS", "CopperPlatePowerModel", false,  # simulation defaults
+        24, "HiGHS", "DCPPowerModel", false,  # simulation defaults
         Set{String}(), Set{String}(),  # fuel sets
         Dict{String, Float64}(), Dict{String, Float64}(),  # cost defaults
         true, true, true,  # output defaults
         false, String[], String[]  # validation state
     )
     
-    # Parse and validate configuration
     parse_and_validate!(config)
     
     @info "✅ SiennaConfig initialized successfully"
@@ -127,38 +110,22 @@ end
 """
     parse_and_validate!(config::SiennaConfig)
 
-Parse configuration data and validate all parameters.
+Parse simplified configuration structure.
 """
 function parse_and_validate!(config::SiennaConfig)
-    @info "📋 Parsing and validating configuration..."
+    @info "📋 Parsing simplified configuration..."
     
-    # Reset validation state
     config.validation_warnings = String[]
     config.validation_errors = String[]
     
     try
-        # Parse paths
         parse_paths!(config)
-        
-        # Parse project metadata
         parse_project_metadata!(config)
-        
-        # Parse system building parameters
         parse_system_building!(config)
-        
-        # Parse simulation parameters
         parse_simulation_parameters!(config)
-        
-        # Parse fuel mappings
         parse_fuel_mappings!(config)
-        
-        # Parse cost defaults
         parse_cost_defaults!(config)
-        
-        # Parse output settings
         parse_output_settings!(config)
-        
-        # Validate parsed configuration
         validate_configuration!(config)
         
         config.is_validated = true
@@ -187,22 +154,19 @@ end
 """
     parse_paths!(config::SiennaConfig)
 
-Parse and expand all file paths.
+Parse paths from simplified structure.
 """
 function parse_paths!(config::SiennaConfig)
     paths_section = get(config.config_data, "paths", Dict())
     
-    # Required paths
     config.data_directory = expanduser(get(paths_section, "data_directory", "./data"))
     config.output_directory = expanduser(get(paths_section, "output_directory", "./sienna_results"))
     config.export_directory = expanduser(get(paths_section, "export_directory", "./sienna_psb_cases"))
     
-    # Validate data directory exists
     if !isdir(config.data_directory)
         push!(config.validation_errors, "Data directory not found: $(config.data_directory)")
     end
     
-    # Create output directories if they don't exist
     for dir in [config.output_directory, config.export_directory]
         if !isdir(dir)
             try
@@ -218,7 +182,7 @@ end
 """
     parse_project_metadata!(config::SiennaConfig)
 
-Parse project metadata section.
+Parse project metadata.
 """
 function parse_project_metadata!(config::SiennaConfig)
     project_section = get(config.config_data, "project", Dict())
@@ -232,7 +196,7 @@ end
 """
     parse_system_building!(config::SiennaConfig)
 
-Parse system building parameters.
+Parse system building parameters from simplified structure.
 """
 function parse_system_building!(config::SiennaConfig)
     system_section = get(config.config_data, "system_building", Dict())
@@ -242,7 +206,6 @@ function parse_system_building!(config::SiennaConfig)
     config.validate_system = get(system_section, "validate_system", true)
     config.load_timeseries = get(system_section, "load_timeseries", false)
     
-    # Validate ranges
     if config.base_power <= 0
         push!(config.validation_errors, "base_power must be positive, got: $(config.base_power)")
     end
@@ -255,22 +218,21 @@ end
 """
     parse_simulation_parameters!(config::SiennaConfig)
 
-Parse simulation parameters.
+Parse simulation parameters from simplified structure.
 """
 function parse_simulation_parameters!(config::SiennaConfig)
     sim_section = get(config.config_data, "simulations", Dict())
     
-    config.default_horizon_hours = get(sim_section, "default_horizon_hours", 24)
-    config.default_solver = get(sim_section, "default_solver", "HiGHS")
+    config.default_horizon_hours = get(sim_section, "horizon_hours", 24)
+    config.default_solver = get(get(config.config_data, "solver", Dict()), "name", "HiGHS")
     
-    # Parse network settings
-    network_section = get(sim_section, "network", Dict())
-    config.network_model = get(network_section, "default_model", "CopperPlatePowerModel")
+    # Parse network settings from new [network] section
+    network_section = get(config.config_data, "network", Dict())
+    config.network_model = get(network_section, "model", "DCPPowerModel")
     config.enable_transmission_limits = get(network_section, "enable_transmission_limits", false)
     
-    # Validate simulation parameters
     if config.default_horizon_hours <= 0
-        push!(config.validation_errors, "default_horizon_hours must be positive, got: $(config.default_horizon_hours)")
+        push!(config.validation_errors, "horizon_hours must be positive, got: $(config.default_horizon_hours)")
     end
     
     if config.default_solver != "HiGHS"
@@ -294,7 +256,7 @@ end
 """
     parse_fuel_mappings!(config::SiennaConfig)
 
-Parse fuel type mappings.
+Parse fuel mappings from simplified structure.
 """
 function parse_fuel_mappings!(config::SiennaConfig)
     system_section = get(config.config_data, "system_building", Dict())
@@ -306,7 +268,6 @@ function parse_fuel_mappings!(config::SiennaConfig)
     config.thermal_fuels = Set(uppercase.(thermal_fuels))
     config.renewable_fuels = Set(uppercase.(renewable_fuels))
     
-    # Check for overlap
     overlap = intersect(config.thermal_fuels, config.renewable_fuels)
     if !isempty(overlap)
         push!(config.validation_warnings, 
@@ -317,7 +278,7 @@ end
 """
     parse_cost_defaults!(config::SiennaConfig)
 
-Parse default cost parameters.
+Parse cost defaults from simplified structure.
 """
 function parse_cost_defaults!(config::SiennaConfig)
     system_section = get(config.config_data, "system_building", Dict())
@@ -338,7 +299,7 @@ function parse_cost_defaults!(config::SiennaConfig)
     
     # Validate cost parameters
     for (param, value) in config.thermal_defaults
-        if value < 0 && param != "shutdown_cost"  # shutdown cost can be negative
+        if value < 0 && param != "shutdown_cost"
             push!(config.validation_warnings, "Negative thermal $param: $value")
         end
     end
@@ -353,7 +314,7 @@ end
 """
     parse_output_settings!(config::SiennaConfig)
 
-Parse output and results settings.
+Parse output settings from simplified structure.
 """
 function parse_output_settings!(config::SiennaConfig)
     output_section = get(config.config_data, "output", Dict())
@@ -366,10 +327,9 @@ end
 """
     validate_configuration!(config::SiennaConfig)
 
-Perform additional validation checks.
+Validate the parsed configuration.
 """
 function validate_configuration!(config::SiennaConfig)
-    # Check required CSV files exist
     required_files = ["bus.csv", "load.csv"]
     optional_files = ["gen.csv", "branch.csv", "dc_branch.csv"]
     
@@ -387,7 +347,6 @@ function validate_configuration!(config::SiennaConfig)
         end
     end
     
-    # Check time series metadata if time series loading enabled
     if config.load_timeseries
         metadata_file = joinpath(config.data_directory, "timeseries_metadata.json")
         if !isfile(metadata_file)
@@ -397,66 +356,35 @@ function validate_configuration!(config::SiennaConfig)
     end
 end
 
-# ===== PUBLIC INTERFACE METHODS =====
-
-"""
-    get_data_directory(config::SiennaConfig)
-
-Get the validated data directory path.
-"""
-function get_data_directory(config::SiennaConfig)
-    ensure_validated(config)
-    return config.data_directory
-end
-
-"""
-    get_output_directory(config::SiennaConfig)
-
-Get the output directory path.
-"""
-function get_output_directory(config::SiennaConfig)
-    ensure_validated(config)
-    return config.output_directory
-end
-
-"""
-    get_export_directory(config::SiennaConfig)
-
-Get the export directory path.
-"""
-function get_export_directory(config::SiennaConfig)
-    ensure_validated(config)
-    return config.export_directory
-end
+# ===== UPDATED PUBLIC INTERFACE METHODS =====
 
 """
     get_solver_settings(config::SiennaConfig, formulation_type::String="economic_dispatch")
 
-Get solver settings for the specified formulation type.
+Get solver settings from simplified [solver] section.
 """
 function get_solver_settings(config::SiennaConfig, formulation_type::String="economic_dispatch")
     ensure_validated(config)
     
-    solver_settings = get(get(config.config_data, "simulations", Dict()), "solver_settings", Dict())
-    highs_settings = get(solver_settings, "HiGHS", Dict())
+    solver_section = get(config.config_data, "solver", Dict())
     
     if formulation_type == "economic_dispatch"
         return Dict{String, Any}(
-            "time_limit" => get(highs_settings, "time_limit_ed", 300.0),
-            "mip_gap" => get(highs_settings, "mip_gap_ed", 0.01),
-            "threads" => get(highs_settings, "threads", 0),
-            "output_flag" => get(highs_settings, "output_flag", false),
-            "presolve" => get(highs_settings, "presolve", "on"),
-            "parallel" => get(highs_settings, "parallel", "on")
+            "time_limit" => get(solver_section, "time_limit_ed", 300.0),
+            "mip_gap" => get(solver_section, "mip_gap_ed", 0.01),
+            "threads" => get(solver_section, "threads", 0),
+            "output_flag" => get(solver_section, "output_flag", false),
+            "presolve" => get(solver_section, "presolve", "on"),
+            "parallel" => get(solver_section, "parallel", "on")
         )
     elseif formulation_type == "unit_commitment"
         return Dict{String, Any}(
-            "time_limit" => get(highs_settings, "time_limit_uc", 600.0),
-            "mip_gap" => get(highs_settings, "mip_gap_uc", 0.02),
-            "threads" => get(highs_settings, "threads", 0),
-            "output_flag" => get(highs_settings, "output_flag", false),
-            "presolve" => get(highs_settings, "presolve", "on"),
-            "parallel" => get(highs_settings, "parallel", "on")
+            "time_limit" => get(solver_section, "time_limit_uc", 600.0),
+            "mip_gap" => get(solver_section, "mip_gap_uc", 0.02),
+            "threads" => get(solver_section, "threads", 0),
+            "output_flag" => get(solver_section, "output_flag", false),
+            "presolve" => get(solver_section, "presolve", "on"),
+            "parallel" => get(solver_section, "parallel", "on")
         )
     else
         error("❌ Unknown formulation type: $formulation_type")
@@ -466,19 +394,19 @@ end
 """
     get_device_formulations(config::SiennaConfig, formulation_type::String)
 
-Get device formulation mappings for the specified formulation type.
+Get device formulations from simplified [formulations] section.
 """
 function get_device_formulations(config::SiennaConfig, formulation_type::String)
     ensure_validated(config)
     
-    formulations_section = get(get(config.config_data, "simulations", Dict()), "formulations", Dict())
+    formulations_section = get(config.config_data, "formulations", Dict())
     return get(formulations_section, formulation_type, Dict())
 end
 
 """
     should_run_formulation(config::SiennaConfig, formulation_type::String)
 
-Check if a specific formulation should be run based on config.
+Check if formulation should run based on simplified config.
 """
 function should_run_formulation(config::SiennaConfig, formulation_type::String)
     ensure_validated(config)
@@ -495,55 +423,88 @@ function should_run_formulation(config::SiennaConfig, formulation_type::String)
 end
 
 """
-    is_fuel_thermal(config::SiennaConfig, fuel_type::String)
+    get_network_settings(config::SiennaConfig)
 
-Check if a fuel type is classified as thermal.
+Get network settings from simplified [network] section.
 """
+function get_network_settings(config::SiennaConfig)
+    ensure_validated(config)
+    
+    network_section = get(config.config_data, "network", Dict())
+    return Dict{String, Any}(
+        "model" => get(network_section, "model", "DCPPowerModel"),
+        "enable_transmission_limits" => get(network_section, "enable_transmission_limits", false),
+        "use_slacks" => get(network_section, "use_slacks", true),
+        "add_slack_variables" => get(network_section, "add_slack_variables", true),
+        "slack_penalty" => get(network_section, "slack_penalty", 1000000.0)
+    )
+end
+
+"""
+    get_debug_settings(config::SiennaConfig)
+
+Get debug settings from simplified [output] section.
+"""
+function get_debug_settings(config::SiennaConfig)
+    ensure_validated(config)
+    
+    output_section = get(config.config_data, "output", Dict())
+    return Dict{String, Any}(
+        "export_optimization_model" => get(output_section, "export_optimization_model", true),
+        "save_solver_logs" => get(output_section, "save_solver_logs", true),
+        "save_constraint_breakdown" => get(output_section, "save_constraint_breakdown", true),
+        "save_variable_breakdown" => get(output_section, "save_variable_breakdown", true)
+    )
+end
+
+# ===== UTILITY METHODS (unchanged) =====
+
+function ensure_validated(config::SiennaConfig)
+    if !config.is_validated
+        error("❌ Configuration has not been validated. Call parse_and_validate! first.")
+    end
+end
+
+function get_data_directory(config::SiennaConfig)
+    ensure_validated(config)
+    return config.data_directory
+end
+
+function get_output_directory(config::SiennaConfig)
+    ensure_validated(config)
+    return config.output_directory
+end
+
+function get_export_directory(config::SiennaConfig)
+    ensure_validated(config)
+    return config.export_directory
+end
+
 function is_fuel_thermal(config::SiennaConfig, fuel_type::String)
     ensure_validated(config)
     return uppercase(fuel_type) in config.thermal_fuels
 end
 
-"""
-    is_fuel_renewable(config::SiennaConfig, fuel_type::String)
-
-Check if a fuel type is classified as renewable.
-"""
 function is_fuel_renewable(config::SiennaConfig, fuel_type::String)
     ensure_validated(config)
     return uppercase(fuel_type) in config.renewable_fuels
 end
 
-"""
-    get_thermal_defaults(config::SiennaConfig)
-
-Get default thermal generator parameters.
-"""
 function get_thermal_defaults(config::SiennaConfig)
     ensure_validated(config)
     return copy(config.thermal_defaults)
 end
 
-"""
-    get_renewable_defaults(config::SiennaConfig)
-
-Get default renewable generator parameters.
-"""
 function get_renewable_defaults(config::SiennaConfig)
     ensure_validated(config)
     return copy(config.renewable_defaults)
 end
 
-"""
-    show_summary(config::SiennaConfig)
-
-Display a comprehensive configuration summary.
-"""
 function show_summary(config::SiennaConfig)
     ensure_validated(config)
     
     @info "\n" * "="^60
-    @info "SIENNA CONFIGURATION SUMMARY"
+    @info "SIENNA CONFIGURATION SUMMARY (SIMPLIFIED)"
     @info "="^60
     @info "Project: $(config.project_name)"
     @info "Version: $(config.project_version)"
@@ -583,44 +544,18 @@ function show_summary(config::SiennaConfig)
     end
 end
 
-# ===== UTILITY METHODS =====
-
-"""
-    ensure_validated(config::SiennaConfig)
-
-Ensure configuration has been validated before use.
-"""
-function ensure_validated(config::SiennaConfig)
-    if !config.is_validated
-        error("❌ Configuration has not been validated. Call parse_and_validate! first.")
-    end
-end
-
-"""
-    reload!(config::SiennaConfig)
-
-Reload configuration from file.
-"""
 function reload!(config::SiennaConfig)
     @info "🔄 Reloading configuration from: $(config.config_file_path)"
-    
     config.config_data = TOML.parsefile(config.config_file_path)
     parse_and_validate!(config)
-    
     @info "✅ Configuration reloaded successfully"
 end
 
-"""
-    export_config(config::SiennaConfig, output_file::String)
-
-Export current configuration to a new TOML file.
-"""
 function export_config(config::SiennaConfig, output_file::String)
     ensure_validated(config)
     
     @info "💾 Exporting configuration to: $output_file"
     
-    # Add metadata to exported config
     export_data = deepcopy(config.config_data)
     
     if !haskey(export_data, "export_metadata")
@@ -629,7 +564,7 @@ function export_config(config::SiennaConfig, output_file::String)
     
     export_data["export_metadata"]["exported_at"] = string(now())
     export_data["export_metadata"]["exported_from"] = config.config_file_path
-    export_data["export_metadata"]["sienna_config_version"] = "2.0"
+    export_data["export_metadata"]["sienna_config_version"] = "2.0_simplified"
     
     open(output_file, "w") do f
         TOML.print(f, export_data)
@@ -641,13 +576,13 @@ end
 """
     create_default_config(config_file::String)
 
-Create a default configuration file.
+Create simplified default configuration file.
 """
 function create_default_config(config_file::String)
-    @info "📝 Creating default configuration: $config_file"
+    @info "📝 Creating simplified default configuration: $config_file"
     
     default_config = """
-# Sienna Power System Configuration v2.0
+# Sienna Power System Configuration v2.0 - Simplified
 # Edit this file for your specific project
 
 [project]
@@ -658,7 +593,6 @@ author = "Sienna User"
 created_date = "$(Dates.format(now(), "yyyy-mm-dd"))"
 
 [paths]
-# Primary data directory - EDIT THIS PATH
 data_directory = "./data"
 output_directory = "./sienna_results"
 export_directory = "./sienna_psb_cases"
@@ -669,6 +603,10 @@ default_voltage = 400.0
 validate_system = true
 load_timeseries = false
 
+[system_building.areas]
+area_strategy = "per_bus"
+validate_area_assignments = true
+
 [system_building.fuel_mapping]
 thermal_fuels = ["COAL", "NATURAL_GAS", "DIESEL", "NUCLEAR", "BIOMASS"]
 renewable_fuels = ["WIND", "SOLAR", "HYDRO", "GEOTHERMAL"]
@@ -676,23 +614,18 @@ renewable_fuels = ["WIND", "SOLAR", "HYDRO", "GEOTHERMAL"]
 [system_building.defaults]
 thermal_variable_cost = 50.0
 thermal_startup_cost = 1000.0
-thermal_shutdown_cost = 0.0
 renewable_variable_cost = 0.0
 thermal_ramp_rate = 100.0
-thermal_min_power_fraction = 0.3
-renewable_min_power_fraction = 0.0
 
 [simulations]
-default_horizon_hours = 24
-default_solver = "HiGHS"
+simulation_type = "ST"
+horizon_hours = 48
+interval_hours = 24
+annual_simulation_days = 365
 run_economic_dispatch = true
-run_unit_commitment = true
+run_unit_commitment = false
 
-[simulations.network]
-default_model = "CopperPlatePowerModel"
-enable_transmission_limits = false
-
-[simulations.formulations.economic_dispatch]
+[formulations.economic_dispatch]
 thermal_standard = "ThermalBasicDispatch"
 renewable_dispatch = "RenewableFullDispatch"
 renewable_nondispatch = "FixedOutput"
@@ -700,7 +633,7 @@ power_load = "StaticPowerLoad"
 line = "StaticBranch"
 dc_line = "HVDCTwoTerminalDispatch"
 
-[simulations.formulations.unit_commitment]
+[formulations.unit_commitment]
 thermal_standard = "ThermalBasicUnitCommitment"
 renewable_dispatch = "RenewableFullDispatch"
 renewable_nondispatch = "FixedOutput"
@@ -708,31 +641,36 @@ power_load = "StaticPowerLoad"
 line = "StaticBranch"
 dc_line = "HVDCTwoTerminalDispatch"
 
-[simulations.solver_settings.HiGHS]
+[network]
+model = "DCPPowerModel"
+enable_transmission_limits = true
+
+[solver]
+name = "HiGHS"
 time_limit_ed = 300.0
 time_limit_uc = 600.0
 mip_gap_ed = 0.01
 mip_gap_uc = 0.02
 threads = 0
 output_flag = false
-presolve = "on"
-parallel = "on"
 
 [output]
 save_all_variables = true
 save_csv_variables = true
 create_timestamped_folders = true
 
-[logging]
-level = "Info"
-log_to_file = false
+[validation]
+check_power_balance = true
+max_generation_capacity = 100000.0
+max_load = 50000.0
+min_reserve_margin = 0.15
 """
     
     open(config_file, "w") do f
         write(f, default_config)
     end
     
-    @info "✅ Default configuration created: $config_file"
+    @info "✅ Simplified default configuration created: $config_file"
 end
 
 # ===== EXPORTS =====
@@ -740,26 +678,7 @@ end
 export SiennaConfig
 export get_data_directory, get_output_directory, get_export_directory
 export get_solver_settings, get_device_formulations, should_run_formulation
+export get_network_settings, get_debug_settings
 export is_fuel_thermal, is_fuel_renewable
 export get_thermal_defaults, get_renewable_defaults
 export show_summary, reload!, export_config
-
-# Test functionality when run directly
-if abspath(PROGRAM_FILE) == @__FILE__
-    @info "🧪 Testing SiennaConfig..."
-    
-    try
-        # Test with default config
-        if isfile("config.toml")
-            test_config = SiennaConfig("config.toml")
-            show_summary(test_config)
-            @info "✅ SiennaConfig test passed"
-        else
-            @info "No config.toml found - creating default"
-            create_default_config("config.toml")
-            @info "✅ Default config created - edit and run again"
-        end
-    catch e
-        @error "❌ SiennaConfig test failed: $e"
-    end
-end
