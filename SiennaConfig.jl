@@ -359,16 +359,16 @@ end
 # ===== UPDATED PUBLIC INTERFACE METHODS =====
 
 """
-    get_solver_settings(config::SiennaConfig, formulation_type::String="economic_dispatch")
+    get_solver_settings(config::SiennaConfig, formulation_type::String="ed")
 
 Get solver settings from simplified [solver] section.
 """
-function get_solver_settings(config::SiennaConfig, formulation_type::String="economic_dispatch")
+function get_solver_settings(config::SiennaConfig, formulation_type::String="ed")
     ensure_validated(config)
     
     solver_section = get(config.config_data, "solver", Dict())
     
-    if formulation_type == "economic_dispatch"
+    if formulation_type == "ed"
         return Dict{String, Any}(
             "time_limit" => get(solver_section, "time_limit_ed", 300.0),
             "mip_gap" => get(solver_section, "mip_gap_ed", 0.01),
@@ -377,7 +377,7 @@ function get_solver_settings(config::SiennaConfig, formulation_type::String="eco
             "presolve" => get(solver_section, "presolve", "on"),
             "parallel" => get(solver_section, "parallel", "on")
         )
-    elseif formulation_type == "unit_commitment"
+    elseif formulation_type == "uc"
         return Dict{String, Any}(
             "time_limit" => get(solver_section, "time_limit_uc", 600.0),
             "mip_gap" => get(solver_section, "mip_gap_uc", 0.02),
@@ -413,9 +413,9 @@ function should_run_formulation(config::SiennaConfig, formulation_type::String)
     
     sim_section = get(config.config_data, "simulations", Dict())
     
-    if formulation_type == "economic_dispatch"
+    if formulation_type == "ed"
         return get(sim_section, "run_economic_dispatch", true)
-    elseif formulation_type == "unit_commitment"
+    elseif formulation_type == "uc"
         return get(sim_section, "run_unit_commitment", true)
     else
         return false

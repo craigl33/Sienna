@@ -17,6 +17,7 @@ using Dates
 using Logging
 using InfrastructureSystems
 using PowerSystems: PumpHydroStatus
+using Infiltrator
 
 # Import configuration manager
 include("SiennaConfig.jl")
@@ -111,7 +112,8 @@ Create the base PowerSystems.jl system.
 """
 function _create_base_system!(sienna_sys::SiennaSystem)
     @info "Creating base system..."
-    sienna_sys.system = System(sienna_sys.config.base_power, unit_system="NATURAL_UNITS")
+    sienna_sys.system = System(sienna_sys.config.base_power)
+    # Set the unit system globally
     set_name!(sienna_sys.system, sienna_sys.config.project_name)
 end
 
@@ -195,14 +197,15 @@ end
 Calculate the required time series length for simulations.
 """
 function _calculate_required_time_series_length(sienna_sys::SiennaSystem)
-    horizon_hours = sienna_sys.config.default_horizon_hours
-    interval_hours = 24
-    simulation_days = get(sienna_sys.config.config_data["simulations"], "annual_simulation_days", 365)
-    
-    required_length = (simulation_days * interval_hours) + (horizon_hours - interval_hours)
+    interval_hours = get(sienna_sys.config.config_data["simulations"],"interval_hours", 0)
+    lookahead_hours = get(sienna_sys.config.config_data["simulations"],"lookahead_hours", 0)
+    horizon_hours = interval_hours + lookahead_hours
+    total_steps = get(sienna_sys.config.config_data["simulations"], "total_steps", 365)
+
+    required_length = (total_steps * interval_hours) + lookahead_hours
     
     @info "📊 Time series calculation:"
-    @info "  Simulation days: $simulation_days"
+    @info "  Total steps: $total_steps"
     @info "  Interval: $interval_hours hours"  
     @info "  Horizon: $horizon_hours hours"
     @info "  Required: $required_length hours"
@@ -367,8 +370,10 @@ end
 Transform SingleTimeSeries to Deterministic forecasts.
 """
 function _transform_to_forecasts!(sienna_sys::SiennaSystem)
-    horizon_hours = sienna_sys.config.default_horizon_hours
-    
+    interval_hours = get(sienna_sys.config.config_data["simulations"],"interval_hours", 0)
+    lookahead_hours = get(sienna_sys.config.config_data["simulations"],"lookahead_hours", 0)
+    horizon_hours = interval_hours + lookahead_hours
+
     try
         @info "Converting time series to forecasts (horizon: $(horizon_hours)h)..."
         
@@ -449,11 +454,18 @@ function _add_buses!(sienna_sys::SiennaSystem)
     df = CSV.read(bus_file, DataFrame)
     bus_count = 0
     ref_bus_count = 0
+
+    # Determine whether an explicit reference bus is present
+    if (hasproperty(df, :bus_type)) && ("REF" in df.bus_type)
+        explicit_ref_bus = true
+    else
+        explicit_ref_bus = false
+    end
     
     for (i, row) in enumerate(eachrow(df))
         try
             bus_number = _extract_bus_number(row.name, i)
-            bus_type = _determine_bus_type(row, i, ref_bus_count)
+            bus_type = _determine_bus_type(row, i, explicit_ref_bus )
             
             if bus_type == ACBusTypes.REF
                 ref_bus_count += 1
@@ -496,19 +508,26 @@ function _extract_bus_number(name, fallback_index::Int)
 end
 
 """
-    _determine_bus_type(row, index::Int, ref_bus_count::Int)
+    _determine_bus_type(row, index::Int, explicit_ref_bus::Bool)
 
-Determine bus type from data or defaults.
+Determine bus type from data or defaults. If REF bus count is not explicit, assume the first bus is a REF.
 """
-function _determine_bus_type(row, index::Int, ref_bus_count::Int)
-    if haskey(row, :bus_type) && string(row.bus_type) == "REF"
-        return ACBusTypes.REF
-    elseif index == 1 && ref_bus_count == 0
-        return ACBusTypes.REF
+function _determine_bus_type(row, index::Int, explicit_ref_bus::Bool)
+    if explicit_ref_bus
+        if haskey(row, :bus_type) && string(row.bus_type) == "REF"
+            return ACBusTypes.REF
+        else
+            return ACBusTypes.PV
+        end
     else
-        return ACBusTypes.PV
+        if index == 1
+            return ACBusTypes.REF
+        else
+            return ACBusTypes.PV
+        end
     end
 end
+
 
 """
     _add_areas!(sienna_sys::SiennaSystem)
@@ -806,11 +825,26 @@ end
 """
     _add_network_branches!(sienna_sys::SiennaSystem)
 
-Add transmission lines and network components.
+Add transmission lines and network components from branch.csv and dc_branch.csv.
 """
 function _add_network_branches!(sienna_sys::SiennaSystem)
     @info "Adding network branches..."
     
+    # Add AC branches from branch.csv
+    _add_ac_branches!(sienna_sys)
+    
+    # Add DC branches from dc_branch.csv
+    _add_dc_branches!(sienna_sys)
+    
+    @info "✓ Network branches processing complete"
+end
+
+"""
+    _add_ac_branches!(sienna_sys::SiennaSystem)
+
+Add AC transmission lines from branch.csv.
+"""
+function _add_ac_branches!(sienna_sys::SiennaSystem)
     branch_file = joinpath(sienna_sys.config.data_directory, "branch.csv")
     if !isfile(branch_file)
         @info "No branch.csv found"
@@ -843,12 +877,66 @@ function _add_network_branches!(sienna_sys::SiennaSystem)
                 line_count += 1
             end
         catch e
-            @warn "Failed to add line $(row.name): $e"
+            @warn "Failed to add AC line $(row.name): $e"
         end
     end
     
     sienna_sys.component_counts["Line"] = line_count
-    @info "✓ Added $line_count transmission lines"
+    @info "✓ Added $line_count AC transmission lines"
+end
+
+"""
+    _add_dc_branches!(sienna_sys::SiennaSystem)
+
+Add HVDC lines from dc_branch.csv using TwoTerminalHVDCLine.
+Note: TwoTerminalHVDCLine connects ACBus to ACBus, not DCBus to DCBus.
+"""
+function _add_dc_branches!(sienna_sys::SiennaSystem)
+    dc_branch_file = joinpath(sienna_sys.config.data_directory, "dc_branch.csv")
+    if !isfile(dc_branch_file)
+        @info "No dc_branch.csv found"
+        return
+    end
+    
+    df = CSV.read(dc_branch_file, DataFrame)
+    hvdc_line_count = 0
+    
+    for row in eachrow(df)
+        try
+            # TwoTerminalHVDCLine connects ACBus to ACBus, not DCBus
+            from_bus = get_component(ACBus, sienna_sys.system, string(row.connection_points_from))
+            to_bus = get_component(ACBus, sienna_sys.system, string(row.connection_points_to))
+            
+            if from_bus !== nothing && to_bus !== nothing
+                # Create TwoTerminalHVDCLine with required parameters
+                hvdc_line = TwoTerminalHVDCLine(;
+                    name = string(row.name),
+                    available = get(row, :available, true),
+                    active_power_flow = 0.0,
+                    arc = Arc(from_bus, to_bus),
+                    active_power_limits_from = (min = get(row, :active_power_limits_from_min, -100.0), 
+                                              max = get(row, :active_power_limits_from_max, 100.0)),
+                    active_power_limits_to = (min = get(row, :active_power_limits_to_min, -100.0), 
+                                            max = get(row, :active_power_limits_to_max, 100.0)),
+                    reactive_power_limits_from = (min = get(row, :reactive_power_limits_from_min, -50.0), 
+                                                max = get(row, :reactive_power_limits_from_max, 50.0)),
+                    reactive_power_limits_to = (min = get(row, :reactive_power_limits_to_min, -50.0), 
+                                              max = get(row, :reactive_power_limits_to_max, 50.0)),
+                    loss = LinearCurve(get(row, :loss, 0.0))  # Linear loss model with average loss
+                )
+                
+                add_component!(sienna_sys.system, hvdc_line)
+                hvdc_line_count += 1
+            else
+                @warn "Could not find AC buses for HVDC line $(row.name): from=$(row.connection_points_from), to=$(row.connection_points_to)"
+            end
+        catch e
+            @warn "Failed to add HVDC line $(row.name): $e"
+        end
+    end
+    
+    sienna_sys.component_counts["TwoTerminalHVDCLine"] = hvdc_line_count
+    @info "✓ Added $hvdc_line_count HVDC lines"
 end
 
 # ===== PUBLIC INTERFACE =====

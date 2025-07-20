@@ -63,12 +63,15 @@ renewable_min_power_fraction = 0.0 # Minimum power as fraction of max_power
 
 [simulations]
 # Main simulation control
-simulation_type = "ST"  # "test", "ST", "MT", "DA", "RT"
-horizon_hours = 48
+lookahead_hours = 24
 interval_hours = 24
-annual_simulation_days = 365
+total_steps = 7
+initial_time = "2030-01-01"  # Start date for simulation
+resolution = 1 # Resolution in hours for time series data
 enable_multistage_simulation = false
 save_results = true
+enable_warm_start = true          # Use warm start for faster solving
+
 
 # For MT (Medium-Term) simulation parameters
 mt_horizon_days = 365
@@ -91,13 +94,14 @@ renewable_dispatch = "RenewableFullDispatch"
 renewable_nondispatch = "FixedOutput"
 hydro_dispatch = "RenewableFullDispatch"
 hydro_energy_reservoir = "RenewableFullDispatch"
-generic_battery = "EnergyReservoirStorage"
+generic_battery = "StorageDispatchWithReserves" 
 power_load = "StaticPowerLoad"
 interruptible_load = "PowerLoadInterruption"
 line = "StaticBranch"
 transformer = "StaticBranch"
 tap_transformer = "StaticBranch"
 dc_line = "HVDCTwoTerminalDispatch"
+
 
 [formulations.unit_commitment]
 # Unit Commitment formulations (more detailed, MILP-based)
@@ -106,7 +110,7 @@ renewable_dispatch = "RenewableFullDispatch"
 renewable_nondispatch = "FixedOutput"
 hydro_dispatch = "RenewableFullDispatch"
 hydro_energy_reservoir = "RenewableFullDispatch"
-generic_battery = "EnergyReservoirStorage"
+generic_battery = "StorageDispatchWithReserves" 
 power_load = "StaticPowerLoad"
 interruptible_load = "PowerLoadInterruption"
 line = "StaticBranch"
@@ -176,3 +180,6 @@ log_to_file = false
 show_solver_output = false
 log_build_time = true
 log_solve_time = true
+
+[debugging]
+store_variable_names = true       # Store variable names (increases memory)
